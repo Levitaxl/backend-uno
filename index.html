@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>UNO Profesional Nativo</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background-color: #f0f0f0; margin: 0; padding: 20px;}
+        .card { display: inline-block; padding: 20px; margin: 10px; border-radius: 10px; color: white; font-weight: bold; cursor: pointer; border: 2px solid black; min-width: 70px; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);}
+        .Rojo { background-color: #ff4d4d; }
+        .Amarillo { background-color: #ffd11a; color: black; }
+        .Verde { background-color: #2ecc71; }
+        .Azul { background-color: #3498db; }
+        .Comodín { background-color: #222; color: #fff; }
+        #hand, #table { margin: 20px auto; padding: 20px; background: white; border-radius: 8px; max-width: 600px; }
+        #log-panel { background: #fee180; padding: 12px; border-radius: 6px; margin: 15px auto; max-width: 600px; font-weight: bold; border: 1px solid #e6b800; color: #5c4300; }
+        
+        /* Estilos del Menú Emergente (Modal) */
+        #color-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 30px; border-radius: 12px; text-align: center; }
+        .color-btn { width: 80px; height: 80px; margin: 10px; border: none; border-radius: 50%; cursor: pointer; font-weight: bold; color: white; }
+    </style>
+</head>
+<body>
+
+    <h1>UNO Game 🃏</h1>
+    
+    <div id="login">
+        <input type="text" id="username" placeholder="Tu Nombre">
+        <button onclick="join()">Unirse a la partida</button>
+    </div>
+
+    <div id="game" style="display:none;">
+        <h2 id="turn-status">Conectando al servidor...</h2>
+        <div id="log-panel">¡Bienvenidos al juego!</div>
+        
+        <h3>Mesa (Carta del Centro)</h3>
+        <div id="table">
+            <div id="top-card"></div>
+            <button id="draw-btn" onclick="drawCard()" style="margin-top: 15px; padding: 10px 20px; font-weight: bold;">Robar Carta</button>
+        </div>
+
+        <h3>Tu Mano</h3>
+        <div id="hand"></div>
+    </div>
+
+    <div id="color-modal">
+        <div class="modal-content">
+            <h3>Selecciona un Color</h3>
+            <button class="color-btn Rojo" onclick="selectColor('Rojo')">Rojo</button>
+            <button class="color-btn Amarillo" onclick="selectColor('Amarillo')">Amarillo</button>
+            <button class="color-btn Verde" onclick="selectColor('Verde')">Verde</button>
+            <button class="color-btn Azul" onclick="selectColor('Azul')">Azul</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = new WebSocket(`ws://localhost:3000`);
+        let isConnected = false;
+        let pendingCardIndex = null; // Guarda temporalmente el índice de la carta comodín elegida
+
+        socket.onopen = () => { isConnected = true; };
+
+        socket.onmessage = (event) => {
+            const { type, data } = JSON.parse(event.data);
+
+            if (type === 'waitingRoom') {
+                document.getElementById('turn-status').innerText = `Esperando jugadores... Conectados: ${data.join(', ')}`;
+            }
+
+            if (type === 'gameState') {
+                if (!data.gameStarted) return;
+
+                const status = document.getElementById('turn-status');
+                if (data.isMyTurn) {
+                    status.innerText = "¡Es TU turno!";
+                    status.style.color = "green";
+                } else {
+                    status.innerText = `Turno de: ${data.currentTurnName} (${data.direction})`;
+                    status.style.color = "black";
+                }
+
+                // Mostrar el anuncio dinámico del estado del turno anterior en pantalla
+                if (data.log) {
+                    document.getElementById('log-panel').innerText = data.log;
+                }
+
+                // Imprimir carta del centro
+                document.getElementById('top-card').innerHTML = `<div class="card ${data.topCard.color}">${data.topCard.color}<br>${data.topCard.value}</div>`;
+
+                // Imprimir mis cartas
+                const handDiv = document.getElementById('hand');
+                handDiv.innerHTML = '';
+                data.hand.forEach((card, index) => {
+                    const cardEl = document.createElement('div');
+                    cardEl.className = `card ${card.color}`;
+                    cardEl.innerHTML = `${card.color}<br>${card.value}`;
+                    cardEl.onclick = () => { if(data.isMyTurn) playCard(index, card.color); };
+                    handDiv.appendChild(cardEl);
+                });
+            }
+
+            if (type === 'errorMsg') alert(data);
+            if (type === 'gameOver') {
+                alert(data);
+                location.reload();
+            }
+        };
+
+        function join() {
+            if (!isConnected) return alert("Conectando... reintente.");
+            const name = document.getElementById('username').value;
+            if(!name) return alert("Pon un nombre");
+            socket.send(JSON.stringify({ type: 'joinGame', data: name }));
+            document.getElementById('login').style.display = 'none';
+            document.getElementById('game').style.display = 'block';
+        }
+
+        function playCard(index, color) {
+            if (!isConnected) return;
+
+            // Si es Comodín, desplegamos el menú emergente guardando el índice de la carta
+            if (color === 'Comodín') {
+                pendingCardIndex = index;
+                document.getElementById('color-modal').style.display = 'flex';
+            } else {
+                // Envío normal de carta de color
+                socket.send(JSON.stringify({ type: 'playCard', data: { index: index, chosenColor: null } }));
+            }
+        }
+
+        // Se ejecuta al hacer clic en un color del menú emergente
+        function selectColor(color) {
+            document.getElementById('color-modal').style.display = 'none';
+            if (pendingCardIndex !== null) {
+                socket.send(JSON.stringify({ type: 'playCard', data: { index: pendingCardIndex, chosenColor: color } }));
+                pendingCardIndex = null;
+            }
+        }
+
+        function drawCard() {
+            if (isConnected) socket.send(JSON.stringify({ type: 'drawCard' }));
+        }
+    </script>
+</body>
+</html>
