@@ -9,7 +9,6 @@ const wss = new WebSocketServer({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- LÓGICA DEL JUEGO UNO ---
 let players = []; 
 let deck = [];
 let discardPile = [];
@@ -17,7 +16,7 @@ let turnIndex = 0;
 let gameStarted = false;
 let gameDirection = 1; 
 let isPaused = false; 
-let forzarOcultarBotonera = false; // Nueva bandera de control de eventos rápidos
+let forzarOcultarBotonera = false;
 
 function createDeck() {
     const colors = ['Rojo', 'Amarillo', 'Verde', 'Azul'];
@@ -98,8 +97,6 @@ function robarCartasAJugador(playerIndex, cantidad) {
 }
 
 function updateAllPlayers(actionLog = "") {
-    // Si la bandera global de ocultar está activa, mandamos false a todos.
-    // Si no, verificamos de manera normal si alguien tiene una sola carta en la sala.
     const alguienTieneUnaCartaGlobal = forzarOcultarBotonera ? false : players.some(p => p.hand.length === 1);
 
     players.forEach((player, index) => {
@@ -149,7 +146,6 @@ wss.on('connection', (ws) => {
             }
         }
 
-        // --- ACCIÓN: CANTAR UNO ---
         if (type === 'cantarUno') {
             const playerIndex = players.findIndex(p => p.id === clientId);
             if (playerIndex === -1 || !gameStarted) return;
@@ -157,7 +153,7 @@ wss.on('connection', (ws) => {
             const player = players[playerIndex];
             if (player.hand.length === 1) {
                 player.dijoUno = true;
-                forzarOcultarBotonera = true; // OCULTACIÓN INSTANTÁNEA GLOBAL
+                forzarOcultarBotonera = true;
                 updateAllPlayers(`⚡ ¡${player.name} gritó ¡UNO! Justo a tiempo y se protegió.`);
             } else {
                 sendTo(ws, 'errorMsg', 'No puedes cantar UNO si no tienes exactamente 1 carta.');
@@ -165,7 +161,6 @@ wss.on('connection', (ws) => {
             return;
         }
 
-        // --- ACCIÓN: CORTE ---
         if (type === 'cantarCorte') {
             const playerIndex = players.findIndex(p => p.id === clientId);
             if (playerIndex === -1 || !gameStarted) return;
@@ -177,7 +172,7 @@ wss.on('connection', (ws) => {
                 const descuidado = players[descuidadoIndex];
                 robarCartasAJugador(descuidadoIndex, 4);
                 
-                forzarOcultarBotonera = true; // OCULTACIÓN INSTANTÁNEA GLOBAL
+                forzarOcultarBotonera = true;
                 isPaused = true;
                 updateAllPlayers(`🔥 ¡${gritador.name} cantó ¡CORTE! a ${descuidado.name} por no decir UNO! Roba 4 cartas.`);
                 sendTo(descuidado.ws, 'showPopup', `¡Te atraparon! No cantaste UNO a tiempo. Robas 4 cartas de castigo.`);
@@ -214,17 +209,14 @@ wss.on('connection', (ws) => {
                 player.hand.splice(cardIndex, 1);
                 discardPile.push(cardToPlay);
 
-                // Reiniciamos los estados para la nueva jugada
                 if (player.hand.length !== 1) {
                     player.dijoUno = false;
                 }
 
-                // Si alguien se queda con una carta, reabrimos la ventana de oportunidad
                 if (player.hand.length === 1) {
                     forzarOcultarBotonera = false; 
                     logMsg += ` ¡A ${player.name} le queda solo 1 carta!`;
                 } else {
-                    // Si nadie se quedó con 1 carta en este turno, garantizamos que siga limpio
                     const nadieTieneUnaCarta = !players.some(p => p.hand.length === 1);
                     if (nadieTieneUnaCarta) forzarOcultarBotonera = false;
                 }
@@ -297,7 +289,6 @@ wss.on('connection', (ws) => {
             robarCartasAJugador(playerIndex, 1);
             const player = players[playerIndex];
             
-            // Si roba y nadie queda con 1 carta desprotegida, quitamos la botonera
             const nadieTieneUnaCarta = !players.some(p => p.hand.length === 1);
             if (nadieTieneUnaCarta) forzarOcultarBotonera = false;
 
