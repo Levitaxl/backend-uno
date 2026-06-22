@@ -54,7 +54,9 @@
     </div>
 
     <script>
-        const socket = new WebSocket(`ws://localhost:3000`);
+
+        
+        const socket = new WebSocket(`wss://backend-uno-o5v8.onrender.com`);
         let isConnected = false;
         let pendingCardIndex = null; // Guarda temporalmente el índice de la carta comodín elegida
 
