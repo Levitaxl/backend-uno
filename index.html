@@ -153,7 +153,7 @@
     </div>
 
     <script>
-        const socket = new WebSocket(`wss://backend-uno-o5v8.onrender.com`);
+        const socket = new WebSocket(`ws://backend-uno-o5v8.onrender.com`);
         let isConnected = false;
         let pendingCardIndex = null;
 
@@ -224,7 +224,7 @@
 
                 // Renderizar mazo central
                 const topCardImgName = getCardImageName(data.topCard, true);
-                document.getElementById('top-card').innerHTML = `<img src="./assets/${topCardImgName}" class="card-img" style="transform:none;">`;
+                document.getElementById('top-card').innerHTML = `<img src="/assets/${topCardImgName}" class="card-img" style="transform:none;">`;
 
                 const colorIndicatorDiv = document.getElementById('top-card-color');
                 if (data.topCard.isComodinReal) {
@@ -239,7 +239,7 @@
                 data.hand.forEach((card, index) => {
                     const imgName = getCardImageName(card, false);
                     const imgEl = document.createElement('img');
-                    imgEl.src = `./assets/${imgName}`;
+                    imgEl.src = `/assets/${imgName}`;
                     imgEl.className = 'card-img';
                     imgEl.alt = `${card.color} ${card.value}`;
                     imgEl.onclick = () => { if(data.isMyTurn && !data.isPaused) playCard(index, card.color); };
@@ -263,12 +263,19 @@
             document.getElementById('game').style.display = 'flex';
         }
 
+        // Al presionar, ocultamos localmente antes de que llegue la respuesta del socket (Mejora UX)
         function cantarUno() {
-            if (isConnected) socket.send(JSON.stringify({ type: 'cantarUno' }));
+            if (isConnected) {
+                document.getElementById('uno-actions-panel').style.display = 'none';
+                socket.send(JSON.stringify({ type: 'cantarUno' }));
+            }
         }
 
         function cantarCorte() {
-            if (isConnected) socket.send(JSON.stringify({ type: 'cantarCorte' }));
+            if (isConnected) {
+                document.getElementById('uno-actions-panel').style.display = 'none';
+                socket.send(JSON.stringify({ type: 'cantarCorte' }));
+            }
         }
 
         function playCard(index, color) {

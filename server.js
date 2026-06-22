@@ -17,6 +17,7 @@ let turnIndex = 0;
 let gameStarted = false;
 let gameDirection = 1; 
 let isPaused = false; 
+let forzarOcultarBotonera = false; // Nueva bandera de control de eventos rápidos
 
 function createDeck() {
     const colors = ['Rojo', 'Amarillo', 'Verde', 'Azul'];
@@ -48,6 +49,7 @@ function startGame() {
     turnIndex = 0;
     gameDirection = 1;
     isPaused = false;
+    forzarOcultarBotonera = false;
 
     let firstCard = deck.pop();
     while (firstCard.color === 'Comodín') {
@@ -73,6 +75,7 @@ function resetGameTotal(mensajeError) {
     gameStarted = false;
     gameDirection = 1;
     isPaused = false;
+    forzarOcultarBotonera = false;
     players = [];
 }
 
@@ -95,8 +98,9 @@ function robarCartasAJugador(playerIndex, cantidad) {
 }
 
 function updateAllPlayers(actionLog = "") {
-    // Verificar si algún jugador en la sala tiene exactamente 1 carta
-    const alguienTieneUnaCartaGlobal = players.some(p => p.hand.length === 1);
+    // Si la bandera global de ocultar está activa, mandamos false a todos.
+    // Si no, verificamos de manera normal si alguien tiene una sola carta en la sala.
+    const alguienTieneUnaCartaGlobal = forzarOcultarBotonera ? false : players.some(p => p.hand.length === 1);
 
     players.forEach((player, index) => {
         sendTo(player.ws, 'gameState', {
@@ -109,7 +113,7 @@ function updateAllPlayers(actionLog = "") {
             log: actionLog,
             isPaused: isPaused,
             dijoUno: player.dijoUno,
-            mostrarBotoneraUno: alguienTieneUnaCartaGlobal // Enviamos la bandera calculada
+            mostrarBotoneraUno: alguienTieneUnaCartaGlobal 
         });
     });
 }
@@ -153,7 +157,8 @@ wss.on('connection', (ws) => {
             const player = players[playerIndex];
             if (player.hand.length === 1) {
                 player.dijoUno = true;
-                updateAllPlayers(`⚡ ¡${player.name} gritó ¡UNO! Justo a tiempo.`);
+                forzarOcultarBotonera = true; // OCULTACIÓN INSTANTÁNEA GLOBAL
+                updateAllPlayers(`⚡ ¡${player.name} gritó ¡UNO! Justo a tiempo y se protegió.`);
             } else {
                 sendTo(ws, 'errorMsg', 'No puedes cantar UNO si no tienes exactamente 1 carta.');
             }
@@ -172,6 +177,7 @@ wss.on('connection', (ws) => {
                 const descuidado = players[descuidadoIndex];
                 robarCartasAJugador(descuidadoIndex, 4);
                 
+                forzarOcultarBotonera = true; // OCULTACIÓN INSTANTÁNEA GLOBAL
                 isPaused = true;
                 updateAllPlayers(`🔥 ¡${gritador.name} cantó ¡CORTE! a ${descuidado.name} por no decir UNO! Roba 4 cartas.`);
                 sendTo(descuidado.ws, 'showPopup', `¡Te atraparon! No cantaste UNO a tiempo. Robas 4 cartas de castigo.`);
@@ -208,12 +214,19 @@ wss.on('connection', (ws) => {
                 player.hand.splice(cardIndex, 1);
                 discardPile.push(cardToPlay);
 
+                // Reiniciamos los estados para la nueva jugada
                 if (player.hand.length !== 1) {
                     player.dijoUno = false;
                 }
 
+                // Si alguien se queda con una carta, reabrimos la ventana de oportunidad
                 if (player.hand.length === 1) {
+                    forzarOcultarBotonera = false; 
                     logMsg += ` ¡A ${player.name} le queda solo 1 carta!`;
+                } else {
+                    // Si nadie se quedó con 1 carta en este turno, garantizamos que siga limpio
+                    const nadieTieneUnaCarta = !players.some(p => p.hand.length === 1);
+                    if (nadieTieneUnaCarta) forzarOcultarBotonera = false;
                 }
 
                 if (player.hand.length === 0) {
@@ -244,7 +257,6 @@ wss.on('connection', (ws) => {
                         isPaused = true;
                         siguienteIndex = (turnIndex + gameDirection + players.length) % players.length;
                         siguienteJugador = players[siguienteIndex];
-                        
                         logMsg += ` Se invirtió el sentido del juego.`;
                         sendTo(siguienteJugador.ws, 'showPopup', `Se cambió la dirección del juego. ¡Te toca reaccionar!`);
                     }
@@ -284,6 +296,11 @@ wss.on('connection', (ws) => {
 
             robarCartasAJugador(playerIndex, 1);
             const player = players[playerIndex];
+            
+            // Si roba y nadie queda con 1 carta desprotegida, quitamos la botonera
+            const nadieTieneUnaCarta = !players.some(p => p.hand.length === 1);
+            if (nadieTieneUnaCarta) forzarOcultarBotonera = false;
+
             avanzarTurno(1);
             updateAllPlayers(`${player.name} robó una carta. Turno de ${players[turnIndex].name}.`);
         }
