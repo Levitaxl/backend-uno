@@ -2,102 +2,248 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>UNO Profesional Nativo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UNO Master - Multiplayer</title>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; background-color: #f0f0f0; margin: 0; padding: 20px;}
-        .card { display: inline-block; padding: 20px; margin: 10px; border-radius: 10px; color: white; font-weight: bold; cursor: pointer; border: 2px solid black; min-width: 70px; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);}
-        .Rojo { background-color: #ff4d4d; }
-        .Amarillo { background-color: #ffd11a; color: black; }
-        .Verde { background-color: #2ecc71; }
-        .Azul { background-color: #3498db; }
-        .Comodín { background-color: #222; color: #fff; }
-        #hand, #table { margin: 20px auto; padding: 20px; background: white; border-radius: 8px; max-width: 600px; }
-        #log-panel { background: #fee180; padding: 12px; border-radius: 6px; margin: 15px auto; max-width: 600px; font-weight: bold; border: 1px solid #e6b800; color: #5c4300; }
-        
-        /* Estilos del Menú Emergente (Modal) */
-        #color-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; }
-        .modal-content { background: white; padding: 30px; border-radius: 12px; text-align: center; }
-        .color-btn { width: 80px; height: 80px; margin: 10px; border: none; border-radius: 50%; cursor: pointer; font-weight: bold; color: white; }
+        :root {
+            --bg-dark: #121824;
+            --bg-panel: #1e293b;
+            --text-main: #f8fafc;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-yellow: #f59e0b;
+            --accent-blue: #3b82f6;
+        }
+
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            text-align: center; background-color: var(--bg-dark); color: var(--text-main);
+            margin: 0; padding: 10px; min-height: 100vh;
+            display: flex; flex-direction: column; align-items: center;
+        }
+
+        h1 {
+            font-size: 2.2rem; margin: 10px 0; text-transform: uppercase; letter-spacing: 2px;
+            background: linear-gradient(45deg, var(--accent-red), var(--accent-yellow), var(--accent-green), var(--accent-blue));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+
+        #login { background: var(--bg-panel); padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); margin-top: 10vh; max-width: 350px; width: 100%; }
+        input[type="text"] { width: 100%; padding: 12px; margin-bottom: 20px; border: 2px solid #334155; border-radius: 8px; background: #0f172a; color: white; font-size: 16px; box-sizing: border-box; outline: none; }
+
+        button { width: 100%; padding: 12px; font-size: 16px; font-weight: bold; color: white; background: linear-gradient(135deg, #4f46e5, #3b82f6); border: none; border-radius: 8px; cursor: pointer; transition: transform 0.1s, opacity 0.2s; }
+        button:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        #game { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 15px; }
+        #turn-status { font-size: 1.3rem; font-weight: bold; margin: 5px 0; padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.05); }
+        #log-panel { background: #252f48; padding: 12px; border-radius: 10px; font-weight: 500; border-left: 5px solid var(--accent-yellow); color: #e2e8f0; font-size: 0.95rem; text-align: left; }
+
+        /* --- PANEL DE ACCIONES EXTRA (OCULTO POR DEFECTO) --- */
+        #uno-actions-panel {
+            display: none; gap: 15px; justify-content: center; margin: 5px 0; width: 100%;
+        }
+        .action-btn {
+            flex: 1; max-width: 200px; padding: 15px; font-size: 1.1rem; border-radius: 10px; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        .btn-uno { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .btn-uno.active-glow { animation: pulseYellow 1.5s infinite; }
+        .btn-corte { background: linear-gradient(135deg, #dc2626, #991b1b); }
+
+        @keyframes pulseYellow {
+            0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(245, 158, 11, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
+
+        /* --- TABLERO CENTRAL --- */
+        #table-area { display: flex; justify-content: center; align-items: center; gap: 40px; background: var(--bg-panel); padding: 25px; border-radius: 16px; box-shadow: inset 0 0 20px rgba(0,0,0,0.6); }
+        .table-slot { display: flex; flex-direction: column; align-items: center; }
+        .table-slot h4 { margin: 0 0 10px 0; color: #94a3b8; text-transform: uppercase; font-size: 0.8rem; }
+
+        .card-img { width: 110px; height: auto; border-radius: 8px; box-shadow: 0 6px 12px rgba(0,0,0,0.4); transition: transform 0.2s; }
+        #hand .card-img { cursor: pointer; }
+        #hand .card-img:hover { transform: translateY(-15px) scale(1.05); z-index: 10; }
+
+        #deck-draw-pile { width: 110px; height: 165px; background: linear-gradient(135deg, #cc1111, #880000); border: 3px solid #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-weight: bold; font-size: 1.2rem; text-transform: uppercase; transition: transform 0.2s; }
+        #deck-draw-pile:hover { transform: scale(1.03) translateY(-4px); }
+
+        #color-indicator { font-size: 0.9rem; font-weight: bold; margin-top: 12px; padding: 6px 16px; border-radius: 20px; text-transform: uppercase; }
+        .bg-Rojo { background-color: var(--accent-red); box-shadow: 0 0 15px rgba(239,68,68,0.5); }
+        .bg-Amarillo { background-color: var(--accent-yellow); color: #000; }
+        .bg-Verde { background-color: var(--accent-green); box-shadow: 0 0 15px rgba(16,185,129,0.5); }
+        .bg-Azul { background-color: var(--accent-blue); box-shadow: 0 0 15px rgba(59,130,246,0.5); }
+
+        #hand-area { background: rgba(30, 41, 59, 0.5); padding: 20px; border-radius: 16px; border: 1px solid #334155; }
+        #hand { display: flex; overflow-x: auto; padding: 15px 10px; gap: 5px; justify-content: center; min-height: 180px; }
+
+        /* --- MODALES --- */
+        #color-modal, #alert-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(4px); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: var(--bg-panel); padding: 30px; border-radius: 16px; text-align: center; max-width: 400px; width: 85%; border: 1px solid #475569; }
+        .color-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+        .color-btn { height: 70px; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1.1rem; color: white; }
+        .btn-Rojo { background-color: var(--accent-red); }
+        .btn-Amarillo { background-color: var(--accent-yellow); color: black; }
+        .btn-Verde { background-color: var(--accent-green); }
+        .btn-Azul { background-color: var(--accent-blue); }
+        .ok-btn { margin-top: 20px; width: auto; padding: 10px 40px; background: white; color: black; border-radius: 6px; }
+
+        @media (max-width: 500px) {
+            #table-area { gap: 15px; padding: 15px; }
+            .card-img, #deck-draw-pile { width: 85px; height: auto; }
+            #deck-draw-pile { height: 128px; }
+        }
     </style>
 </head>
 <body>
 
-    <h1>UNO Game 🃏</h1>
+    <h1>UNO Online</h1>
     
     <div id="login">
-        <input type="text" id="username" placeholder="Tu Nombre">
-        <button onclick="join()">Unirse a la partida</button>
+        <h2>Ingresa tu Nickname</h2>
+        <input type="text" id="username" placeholder="Ej. LordUno" maxlength="15">
+        <button onclick="join()">Entrar al Lobby</button>
     </div>
 
     <div id="game" style="display:none;">
-        <h2 id="turn-status">Conectando al servidor...</h2>
-        <div id="log-panel">¡Bienvenidos al juego!</div>
+        <div id="turn-status">Conectando...</div>
+        <div id="log-panel">Esperando inicio...</div>
         
-        <h3>Mesa (Carta del Centro)</h3>
-        <div id="table">
-            <div id="top-card"></div>
-            <button id="draw-btn" onclick="drawCard()" style="margin-top: 15px; padding: 10px 20px; font-weight: bold;">Robar Carta</button>
+        <div id="uno-actions-panel">
+            <button id="btn-uno" class="action-btn btn-uno" onclick="cantarUno()">¡UNO!</button>
+            <button id="btn-corte" class="action-btn btn-corte" onclick="cantarCorte()">¡CORTE!</button>
         </div>
 
-        <h3>Tu Mano</h3>
-        <div id="hand"></div>
+        <div id="table-area">
+            <div class="table-slot">
+                <h4>Mazo</h4>
+                <div id="deck-draw-pile" onclick="drawCard()">Robar</div>
+            </div>
+            
+            <div class="table-slot">
+                <h4>Mesa</h4>
+                <div id="top-card"></div>
+                <div id="top-card-color"></div> 
+            </div>
+        </div>
+
+        <div id="hand-area">
+            <h3>Tus cartas en mano:</h3>
+            <div id="hand"></div>
+        </div>
     </div>
 
     <div id="color-modal">
         <div class="modal-content">
-            <h3>Selecciona un Color</h3>
-            <button class="color-btn Rojo" onclick="selectColor('Rojo')">Rojo</button>
-            <button class="color-btn Amarillo" onclick="selectColor('Amarillo')">Amarillo</button>
-            <button class="color-btn Verde" onclick="selectColor('Verde')">Verde</button>
-            <button class="color-btn Azul" onclick="selectColor('Azul')">Azul</button>
+            <h3 style="margin-top:0; font-size: 1.4rem;">Elige el nuevo color:</h3>
+            <div class="color-grid">
+                <button class="color-btn btn-Rojo" onclick="selectColor('Rojo')">Rojo</button>
+                <button class="color-btn btn-Amarillo" onclick="selectColor('Amarillo')">Amarillo</button>
+                <button class="color-btn btn-Verde" onclick="selectColor('Verde')">Verde</button>
+                <button class="color-btn btn-Azul" onclick="selectColor('Azul')">Azul</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="alert-modal">
+        <div class="modal-content">
+            <h2 style="color: var(--accent-red); margin-top: 0;">⚠️ ATENCIÓN</h2>
+            <p id="alert-text" style="font-size: 1.1rem; color: #cbd5e1;"></p>
+            <button class="ok-btn" onclick="acceptPenalty()">Entendido</button>
         </div>
     </div>
 
     <script>
-
-        
         const socket = new WebSocket(`wss://backend-uno-o5v8.onrender.com`);
         let isConnected = false;
-        let pendingCardIndex = null; // Guarda temporalmente el índice de la carta comodín elegida
+        let pendingCardIndex = null;
 
         socket.onopen = () => { isConnected = true; };
+
+        function getCardImageName(card, isTableCard = false) {
+            if ((isTableCard && card.isComodinReal) || card.color === 'Comodín') {
+                if (card.value === 'CambiaColor') return 'Wild_ChangeColor.png';
+                if (card.value === '+4') return 'Wild_DrawFour.png';
+            }
+            const colorMap = { 'Rojo': 'Red', 'Amarillo': 'Yellow', 'Verde': 'Green', 'Azul': 'Blue' };
+            const valueMap = { 'Bloqueo': 'SkipTurn', 'CambioSentido': 'Reverse', '+2': 'DrawTwo', 'CambiaColor': 'ChangeColor', '+4': 'DrawFour' };
+            const colorEnglish = colorMap[card.color] || card.color;
+            const numWords = { '0':'Zero', '1':'One', '2':'Two', '3':'Three', '4':'Four', '5':'Five', '6':'Six', '7':'Seven', '8':'Eight', '9':'Nine' };
+            const valueEnglish = valueMap[card.value] || numWords[card.value] || card.value;
+            return `${colorEnglish}_${valueEnglish}.png`;
+        }
 
         socket.onmessage = (event) => {
             const { type, data } = JSON.parse(event.data);
 
             if (type === 'waitingRoom') {
-                document.getElementById('turn-status').innerText = `Esperando jugadores... Conectados: ${data.join(', ')}`;
+                const status = document.getElementById('turn-status');
+                status.innerText = `⏳ Esperando jugadores... (${data.length}/4)`;
+            }
+
+            if (type === 'showPopup') {
+                document.getElementById('alert-text').innerText = data;
+                document.getElementById('alert-modal').style.display = 'flex';
             }
 
             if (type === 'gameState') {
                 if (!data.gameStarted) return;
 
                 const status = document.getElementById('turn-status');
-                if (data.isMyTurn) {
-                    status.innerText = "¡Es TU turno!";
-                    status.style.color = "green";
+                
+                if (data.isPaused) {
+                    status.innerText = "⏸️ Juego en pausa por penalización...";
+                    status.style.color = "var(--accent-yellow)";
+                } else if (data.isMyTurn) {
+                    status.innerText = "🟢 ¡ES TU TURNO DE JUGAR!";
+                    status.style.color = "#10b981";
                 } else {
-                    status.innerText = `Turno de: ${data.currentTurnName} (${data.direction})`;
-                    status.style.color = "black";
+                    status.innerText = `👤 Turno de: ${data.currentTurnName} (${data.direction})`;
+                    status.style.color = "#cbd5e1";
                 }
 
-                // Mostrar el anuncio dinámico del estado del turno anterior en pantalla
                 if (data.log) {
                     document.getElementById('log-panel').innerText = data.log;
                 }
 
-                // Imprimir carta del centro
-                document.getElementById('top-card').innerHTML = `<div class="card ${data.topCard.color}">${data.topCard.color}<br>${data.topCard.value}</div>`;
+                // --- GESTIÓN DINÁMICA DE BOTONERA DE ACCIÓN DE UNO ---
+                const unoActionsPanel = document.getElementById('uno-actions-panel');
+                const unoBtn = document.getElementById('btn-uno');
 
-                // Imprimir mis cartas
+                if (data.mostrarBotoneraUno) {
+                    unoActionsPanel.style.display = 'flex';
+                } else {
+                    unoActionsPanel.style.display = 'none';
+                }
+
+                // Pulso amarillo si soy yo el que tiene 1 carta pendiente por cantar
+                if (data.hand.length === 1 && !data.dijoUno) {
+                    unoBtn.classList.add('active-glow');
+                } else {
+                    unoBtn.classList.remove('active-glow');
+                }
+
+                // Renderizar mazo central
+                const topCardImgName = getCardImageName(data.topCard, true);
+                document.getElementById('top-card').innerHTML = `<img src="/assets/${topCardImgName}" class="card-img" style="transform:none;">`;
+
+                const colorIndicatorDiv = document.getElementById('top-card-color');
+                if (data.topCard.isComodinReal) {
+                    colorIndicatorDiv.innerHTML = `<div id="color-indicator" class="bg-${data.topCard.color}">Color: ${data.topCard.color}</div>`;
+                } else {
+                    colorIndicatorDiv.innerHTML = '';
+                }
+
+                // Renderizar tu mano
                 const handDiv = document.getElementById('hand');
                 handDiv.innerHTML = '';
                 data.hand.forEach((card, index) => {
-                    const cardEl = document.createElement('div');
-                    cardEl.className = `card ${card.color}`;
-                    cardEl.innerHTML = `${card.color}<br>${card.value}`;
-                    cardEl.onclick = () => { if(data.isMyTurn) playCard(index, card.color); };
-                    handDiv.appendChild(cardEl);
+                    const imgName = getCardImageName(card, false);
+                    const imgEl = document.createElement('img');
+                    imgEl.src = `/assets/${imgName}`;
+                    imgEl.className = 'card-img';
+                    imgEl.alt = `${card.color} ${card.value}`;
+                    imgEl.onclick = () => { if(data.isMyTurn && !data.isPaused) playCard(index, card.color); };
+                    handDiv.appendChild(imgEl);
                 });
             }
 
@@ -109,28 +255,34 @@
         };
 
         function join() {
-            if (!isConnected) return alert("Conectando... reintente.");
+            if (!isConnected) return alert("Conectando al servidor...");
             const name = document.getElementById('username').value;
-            if(!name) return alert("Pon un nombre");
+            if(!name) return alert("Por favor ingresa un nombre.");
             socket.send(JSON.stringify({ type: 'joinGame', data: name }));
             document.getElementById('login').style.display = 'none';
-            document.getElementById('game').style.display = 'block';
+            document.getElementById('game').style.display = 'flex';
+        }
+
+        function cantarUno() {
+            if (isConnected) socket.send(JSON.stringify({ type: 'cantarUno' }));
+        }
+
+        function cantarCorte() {
+            if (isConnected) socket.send(JSON.stringify({ type: 'cantarCorte' }));
         }
 
         function playCard(index, color) {
             if (!isConnected) return;
-
-            // Si es Comodín, desplegamos el menú emergente guardando el índice de la carta
             if (color === 'Comodín') {
                 pendingCardIndex = index;
                 document.getElementById('color-modal').style.display = 'flex';
             } else {
-                // Envío normal de carta de color
                 socket.send(JSON.stringify({ type: 'playCard', data: { index: index, chosenColor: null } }));
             }
         }
 
-        // Se ejecuta al hacer clic en un color del menú emergente
+        document.getElementById('username').addEventListener('keypress', (e) => { if (e.key === 'Enter') join(); });
+
         function selectColor(color) {
             document.getElementById('color-modal').style.display = 'none';
             if (pendingCardIndex !== null) {
@@ -139,8 +291,15 @@
             }
         }
 
+        function acceptPenalty() {
+            document.getElementById('alert-modal').style.display = 'none';
+            socket.send(JSON.stringify({ type: 'resolvePopup' }));
+        }
+
         function drawCard() {
-            if (isConnected) socket.send(JSON.stringify({ type: 'drawCard' }));
+            if (isConnected && !document.getElementById('turn-status').innerText.includes('⏸️')) {
+                socket.send(JSON.stringify({ type: 'drawCard' }));
+            }
         }
     </script>
 </body>

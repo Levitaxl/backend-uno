@@ -16,6 +16,7 @@ let discardPile = [];
 let turnIndex = 0;
 let gameStarted = false;
 let gameDirection = 1; 
+let isPaused = false; 
 
 function createDeck() {
     const colors = ['Rojo', 'Amarillo', 'Verde', 'Azul'];
@@ -46,6 +47,7 @@ function startGame() {
     gameStarted = true;
     turnIndex = 0;
     gameDirection = 1;
+    isPaused = false;
 
     let firstCard = deck.pop();
     while (firstCard.color === 'Comodín') {
@@ -56,6 +58,7 @@ function startGame() {
 
     players.forEach(player => {
         player.hand = [];
+        player.dijoUno = false; 
         for (let i = 0; i < 7; i++) player.hand.push(deck.pop());
     });
 
@@ -63,17 +66,14 @@ function startGame() {
 }
 
 function resetGameTotal(mensajeError) {
-    // 1. Avisar a todos los que queden conectados el motivo del reinicio
     broadcast('gameOver', mensajeError);
-    
-    // 2. Resetear todas las variables de estado al punto inicial
     deck = [];
     discardPile = [];
     turnIndex = 0;
     gameStarted = false;
     gameDirection = 1;
-    players = []; // Vaciamos la lista de jugadores para obligar un nuevo login
-    console.log("El juego ha sido reiniciado por completo debido a una desconexión.");
+    isPaused = false;
+    players = [];
 }
 
 function avanzarTurno(cantidad = 1) {
@@ -89,18 +89,27 @@ function robarCartasAJugador(playerIndex, cantidad) {
         }
         players[playerIndex].hand.push(deck.pop());
     }
+    if (players[playerIndex].hand.length !== 1) {
+        players[playerIndex].dijoUno = false;
+    }
 }
 
 function updateAllPlayers(actionLog = "") {
+    // Verificar si algún jugador en la sala tiene exactamente 1 carta
+    const alguienTieneUnaCartaGlobal = players.some(p => p.hand.length === 1);
+
     players.forEach((player, index) => {
         sendTo(player.ws, 'gameState', {
             hand: player.hand,
             topCard: discardPile[discardPile.length - 1],
-            isMyTurn: index === turnIndex,
+            isMyTurn: index === turnIndex && !isPaused, 
             currentTurnName: players[turnIndex].name,
             gameStarted,
             direction: gameDirection === 1 ? 'Derecha ➡️' : 'Izquierda ⬅️',
-            log: actionLog
+            log: actionLog,
+            isPaused: isPaused,
+            dijoUno: player.dijoUno,
+            mostrarBotoneraUno: alguienTieneUnaCartaGlobal // Enviamos la bandera calculada
         });
     });
 }
@@ -115,10 +124,9 @@ function sendTo(ws, type, data) {
     }
 }
 
-// --- MANEJO DE WEBSOCKETS ---
 wss.on('connection', (ws) => {
     const clientId = Math.random().toString(36).substring(2, 9);
-    let myName = ""; // Guardamos el nombre asignado a este socket de forma local
+    let myName = ""; 
 
     ws.on('message', (message) => {
         const { type, data } = JSON.parse(message);
@@ -128,7 +136,7 @@ wss.on('connection', (ws) => {
             if (players.length >= 4) return sendTo(ws, 'errorMsg', 'Sala llena.');
 
             myName = data || `Jugador ${players.length + 1}`;
-            players.push({ ws, id: clientId, name: myName, hand: [] });
+            players.push({ ws, id: clientId, name: myName, hand: [], dijoUno: false });
             
             if (players.length === 4) {
                 startGame();
@@ -137,9 +145,47 @@ wss.on('connection', (ws) => {
             }
         }
 
+        // --- ACCIÓN: CANTAR UNO ---
+        if (type === 'cantarUno') {
+            const playerIndex = players.findIndex(p => p.id === clientId);
+            if (playerIndex === -1 || !gameStarted) return;
+
+            const player = players[playerIndex];
+            if (player.hand.length === 1) {
+                player.dijoUno = true;
+                updateAllPlayers(`⚡ ¡${player.name} gritó ¡UNO! Justo a tiempo.`);
+            } else {
+                sendTo(ws, 'errorMsg', 'No puedes cantar UNO si no tienes exactamente 1 carta.');
+            }
+            return;
+        }
+
+        // --- ACCIÓN: CORTE ---
+        if (type === 'cantarCorte') {
+            const playerIndex = players.findIndex(p => p.id === clientId);
+            if (playerIndex === -1 || !gameStarted) return;
+
+            const gritador = players[playerIndex];
+            const descuidadoIndex = players.findIndex(p => p.hand.length === 1 && !p.dijoUno);
+
+            if (descuidadoIndex !== -1) {
+                const descuidado = players[descuidadoIndex];
+                robarCartasAJugador(descuidadoIndex, 4);
+                
+                isPaused = true;
+                updateAllPlayers(`🔥 ¡${gritador.name} cantó ¡CORTE! a ${descuidado.name} por no decir UNO! Roba 4 cartas.`);
+                sendTo(descuidado.ws, 'showPopup', `¡Te atraparon! No cantaste UNO a tiempo. Robas 4 cartas de castigo.`);
+            } else {
+                sendTo(ws, 'errorMsg', 'Nadie está vulnerable al Corte en este momento.');
+            }
+            return;
+        }
+
+        if (isPaused && type !== 'resolvePopup') return;
+
         if (type === 'playCard') {
             const playerIndex = players.findIndex(p => p.id === clientId);
-            if (playerIndex !== turnIndex) return;
+            if (playerIndex !== turnIndex) return; 
 
             const player = players[playerIndex];
             const cardIndex = data.index;
@@ -162,6 +208,14 @@ wss.on('connection', (ws) => {
                 player.hand.splice(cardIndex, 1);
                 discardPile.push(cardToPlay);
 
+                if (player.hand.length !== 1) {
+                    player.dijoUno = false;
+                }
+
+                if (player.hand.length === 1) {
+                    logMsg += ` ¡A ${player.name} le queda solo 1 carta!`;
+                }
+
                 if (player.hand.length === 0) {
                     broadcast('gameOver', `¡${player.name} ha ganado el juego!`);
                     gameStarted = false;
@@ -170,37 +224,55 @@ wss.on('connection', (ws) => {
                 }
 
                 let saltarSiguiente = false;
-                const siguienteIndex = (turnIndex + gameDirection + players.length) % players.length;
-                const siguienteJugador = players[siguienteIndex];
+                let siguienteIndex = (turnIndex + gameDirection + players.length) % players.length;
+                let siguienteJugador = players[siguienteIndex];
 
                 if (cardToPlay.value === 'Bloqueo') {
                     saltarSiguiente = true;
+                    isPaused = true; 
                     logMsg += ` ¡Se saltó el turno de ${siguienteJugador.name}!`;
+                    sendTo(siguienteJugador.ws, 'showPopup', 'Te han bloqueado. Se salta tu turno.');
                 } 
                 else if (cardToPlay.value === 'CambioSentido') {
                     if (players.length === 2) {
                         saltarSiguiente = true;
+                        isPaused = true;
                         logMsg += ` ¡Se saltó el turno de ${siguienteJugador.name}!`;
+                        sendTo(siguienteJugador.ws, 'showPopup', 'Te han bloqueado (Reversa). Se salta tu turno.');
                     } else {
                         gameDirection *= -1;
+                        isPaused = true;
+                        siguienteIndex = (turnIndex + gameDirection + players.length) % players.length;
+                        siguienteJugador = players[siguienteIndex];
+                        
                         logMsg += ` Se invirtió el sentido del juego.`;
+                        sendTo(siguienteJugador.ws, 'showPopup', `Se cambió la dirección del juego. ¡Te toca reaccionar!`);
                     }
                 } 
                 else if (cardToPlay.value === '+2') {
                     robarCartasAJugador(siguienteIndex, 2);
                     saltarSiguiente = true;
+                    isPaused = true;
                     logMsg += ` ${siguienteJugador.name} roba 2 cartas y se salta su turno.`;
+                    sendTo(siguienteJugador.ws, 'showPopup', 'Te tiraron un +2. Robas 2 cartas y pierdes tu turno.');
                 } 
                 else if (cardToPlay.value === '+4') {
                     robarCartasAJugador(siguienteIndex, 4);
                     saltarSiguiente = true;
+                    isPaused = true;
                     logMsg += ` ${siguienteJugador.name} roba 4 cartas y se salta su turno.`;
+                    sendTo(siguienteJugador.ws, 'showPopup', 'Te tiraron un +4. Robas 4 cartas y pierdes tu turno.');
                 }
 
-                avanzarTurno(saltarSiguiente ? 2 : 1);
-                logMsg += ` Ahora es el turno de ${players[turnIndex].name}.`;
+                if (isPaused) {
+                    avanzarTurno(saltarSiguiente ? 2 : 1);
+                    updateAllPlayers(`${logMsg} Esperando que acepte la penalización...`);
+                } else {
+                    avanzarTurno(1);
+                    logMsg += ` Ahora es el turno de ${players[turnIndex].name}.`;
+                    updateAllPlayers(logMsg);
+                }
 
-                updateAllPlayers(logMsg);
             } else {
                 sendTo(ws, 'errorMsg', 'Movimiento inválido. Debe coincidir color o valor.');
             }
@@ -215,17 +287,18 @@ wss.on('connection', (ws) => {
             avanzarTurno(1);
             updateAllPlayers(`${player.name} robó una carta. Turno de ${players[turnIndex].name}.`);
         }
+
+        if (type === 'resolvePopup') {
+            isPaused = false; 
+            avanzarTurno(0); 
+            updateAllPlayers(`El juego se reanuda. Turno de ${players[turnIndex].name}.`);
+        }
     });
 
-    // --- DETECTAR CUANDO ALGUIEN SE SALE / CIERRA LA PANTALLA ---
     ws.on('close', () => {
-        console.log(`Usuario desconectado: ${clientId} (${myName || 'Sin registrar'})`);
-
-        // Si el juego ya había comenzado, la salida de cualquiera arruina la partida en curso
         if (gameStarted) {
-            resetGameTotal(`Partida cancelada: El jugador "${myName || 'Un usuario'}" abandonó la sala. El juego se reiniciará para todos.`);
+            resetGameTotal(`Partida cancelada: Alguien abandonó la sala.`);
         } else {
-            // Si aún estaban en la sala de espera, simplemente lo sacamos de la lista sin reiniciar todo
             players = players.filter(p => p.id !== clientId);
             broadcast('waitingRoom', players.map(p => p.name));
         }
