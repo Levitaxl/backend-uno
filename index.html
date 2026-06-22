@@ -224,7 +224,7 @@
 
                 // Renderizar mazo central
                 const topCardImgName = getCardImageName(data.topCard, true);
-                document.getElementById('top-card').innerHTML = `<img src="/assets/${topCardImgName}" class="card-img" style="transform:none;">`;
+                document.getElementById('top-card').innerHTML = `<img src="./assets/${topCardImgName}" class="card-img" style="transform:none;">`;
 
                 const colorIndicatorDiv = document.getElementById('top-card-color');
                 if (data.topCard.isComodinReal) {
@@ -239,7 +239,7 @@
                 data.hand.forEach((card, index) => {
                     const imgName = getCardImageName(card, false);
                     const imgEl = document.createElement('img');
-                    imgEl.src = `/assets/${imgName}`;
+                    imgEl.src = `./assets/${imgName}`;
                     imgEl.className = 'card-img';
                     imgEl.alt = `${card.color} ${card.value}`;
                     imgEl.onclick = () => { if(data.isMyTurn && !data.isPaused) playCard(index, card.color); };
