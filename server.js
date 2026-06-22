@@ -10,14 +10,13 @@ const wss = new WebSocketServer({ server });
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- LÓGICA DEL JUEGO UNO ---
-let players = []; // { ws, id, name, hand: [] }
+let players = []; 
 let deck = [];
 let discardPile = [];
 let turnIndex = 0;
 let gameStarted = false;
-let gameDirection = 1; // 1 para derecha/adelante, -1 para izquierda/atrás
+let gameDirection = 1; 
 
-// Crear una baraja con cartas especiales
 function createDeck() {
     const colors = ['Rojo', 'Amarillo', 'Verde', 'Azul'];
     const normales = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -25,23 +24,19 @@ function createDeck() {
     let newDeck = [];
 
     for (let color of colors) {
-        // Cartas Numéricas
         for (let valor of normales) {
             newDeck.push({ color, value: valor });
             if (valor !== '0') newDeck.push({ color, value: valor });
         }
-        // Especiales de color (Bloqueo, Reversa, +2)
         for (let esp of especiales) {
             newDeck.push({ color, value: esp });
             newDeck.push({ color, value: esp });
         }
     }
-
-    // Cartas Comodín (+4) - Son negras/comodines, aquí las llamamos 'Especial'
     for (let i = 0; i < 4; i++) {
+        newDeck.push({ color: 'Comodín', value: 'CambiaColor' });
         newDeck.push({ color: 'Comodín', value: '+4' });
     }
-
     return newDeck.sort(() => Math.random() - 0.5);
 }
 
@@ -52,29 +47,39 @@ function startGame() {
     turnIndex = 0;
     gameDirection = 1;
 
-    // Asegurar que la primera carta de la mesa NO sea un +4 para no romper el inicio
     let firstCard = deck.pop();
-    while (firstCard.value === '+4') {
+    while (firstCard.color === 'Comodín') {
         deck.unshift(firstCard);
         firstCard = deck.pop();
     }
     discardPile.push(firstCard);
 
-    // Repartir 7 cartas
     players.forEach(player => {
         player.hand = [];
         for (let i = 0; i < 7; i++) player.hand.push(deck.pop());
     });
 
-    updateAllPlayers();
+    updateAllPlayers(`¡El juego ha comenzado! Carta inicial: ${firstCard.color} ${firstCard.value}. Turno de ${players[turnIndex].name}.`);
 }
 
-// Función para avanzar el turno respetando la dirección
+function resetGameTotal(mensajeError) {
+    // 1. Avisar a todos los que queden conectados el motivo del reinicio
+    broadcast('gameOver', mensajeError);
+    
+    // 2. Resetear todas las variables de estado al punto inicial
+    deck = [];
+    discardPile = [];
+    turnIndex = 0;
+    gameStarted = false;
+    gameDirection = 1;
+    players = []; // Vaciamos la lista de jugadores para obligar un nuevo login
+    console.log("El juego ha sido reiniciado por completo debido a una desconexión.");
+}
+
 function avanzarTurno(cantidad = 1) {
     turnIndex = (turnIndex + (cantidad * gameDirection) + players.length) % players.length;
 }
 
-// Hacer que un jugador robe cartas del mazo
 function robarCartasAJugador(playerIndex, cantidad) {
     for (let i = 0; i < cantidad; i++) {
         if (deck.length === 0) {
@@ -86,7 +91,7 @@ function robarCartasAJugador(playerIndex, cantidad) {
     }
 }
 
-function updateAllPlayers() {
+function updateAllPlayers(actionLog = "") {
     players.forEach((player, index) => {
         sendTo(player.ws, 'gameState', {
             hand: player.hand,
@@ -94,7 +99,8 @@ function updateAllPlayers() {
             isMyTurn: index === turnIndex,
             currentTurnName: players[turnIndex].name,
             gameStarted,
-            direction: gameDirection === 1 ? 'Derecha ➡️' : 'Izquierda ⬅️'
+            direction: gameDirection === 1 ? 'Derecha ➡️' : 'Izquierda ⬅️',
+            log: actionLog
         });
     });
 }
@@ -112,6 +118,7 @@ function sendTo(ws, type, data) {
 // --- MANEJO DE WEBSOCKETS ---
 wss.on('connection', (ws) => {
     const clientId = Math.random().toString(36).substring(2, 9);
+    let myName = ""; // Guardamos el nombre asignado a este socket de forma local
 
     ws.on('message', (message) => {
         const { type, data } = JSON.parse(message);
@@ -120,7 +127,8 @@ wss.on('connection', (ws) => {
             if (gameStarted) return sendTo(ws, 'errorMsg', 'El juego ya empezó.');
             if (players.length >= 4) return sendTo(ws, 'errorMsg', 'Sala llena.');
 
-            players.push({ ws, id: clientId, name: data || `Jugador ${players.length + 1}`, hand: [] });
+            myName = data || `Jugador ${players.length + 1}`;
+            players.push({ ws, id: clientId, name: myName, hand: [] });
             
             if (players.length === 4) {
                 startGame();
@@ -134,60 +142,65 @@ wss.on('connection', (ws) => {
             if (playerIndex !== turnIndex) return;
 
             const player = players[playerIndex];
-            const cardToPlay = player.hand[data];
+            const cardIndex = data.index;
+            const chosenColor = data.chosenColor; 
+            const cardToPlay = player.hand[cardIndex];
             const topCard = discardPile[discardPile.length - 1];
 
-            // VALIDACIÓN: Coincide color, coincide valor, o es un comodín (+4)
-            const esComodin = cardToPlay.color === 'Comodín';
+            const esComodin = cardToPlay.color === 'Comodín' || cardToPlay.isComodinReal; 
             const esValido = esComodin || cardToPlay.color === topCard.color || cardToPlay.value === topCard.value;
 
             if (esValido) {
-                // Si juegas un +4, para simplificar esta versión, toma el color de la carta anterior en la mesa
-                if (esComodin) {
-                    cardToPlay.color = topCard.color; 
+                let logMsg = `${player.name} jugó ${cardToPlay.color === 'Comodín' ? cardToPlay.value : cardToPlay.color + ' ' + cardToPlay.value}.`;
+
+                if (cardToPlay.color === 'Comodín') {
+                    cardToPlay.isComodinReal = true; 
+                    cardToPlay.color = chosenColor; 
+                    logMsg += ` Cambió el color a ${chosenColor}.`;
                 }
 
-                // Remover de la mano y poner en descarte
-                player.hand.splice(data, 1);
+                player.hand.splice(cardIndex, 1);
                 discardPile.push(cardToPlay);
 
-                // Verificar si ganó
                 if (player.hand.length === 0) {
-                    broadcast('gameOver', `${player.name} ha ganado el juego!`);
+                    broadcast('gameOver', `¡${player.name} ha ganado el juego!`);
                     gameStarted = false;
                     players = [];
                     return;
                 }
 
-                // --- APLICAR EFECTOS DE LAS CARTAS ---
                 let saltarSiguiente = false;
+                const siguienteIndex = (turnIndex + gameDirection + players.length) % players.length;
+                const siguienteJugador = players[siguienteIndex];
 
                 if (cardToPlay.value === 'Bloqueo') {
                     saltarSiguiente = true;
+                    logMsg += ` ¡Se saltó el turno de ${siguienteJugador.name}!`;
                 } 
                 else if (cardToPlay.value === 'CambioSentido') {
                     if (players.length === 2) {
-                        // En partidas de 2 jugadores, el cambio de sentido actúa como un bloqueo
                         saltarSiguiente = true;
+                        logMsg += ` ¡Se saltó el turno de ${siguienteJugador.name}!`;
                     } else {
-                        gameDirection *= -1; // Invierte la dirección: 1 a -1 o viceversa
+                        gameDirection *= -1;
+                        logMsg += ` Se invirtió el sentido del juego.`;
                     }
                 } 
                 else if (cardToPlay.value === '+2') {
-                    // Calculamos quién es el siguiente afectado antes de cambiar el turno real
-                    const siguienteIndex = (turnIndex + gameDirection + players.length) % players.length;
                     robarCartasAJugador(siguienteIndex, 2);
-                    saltarSiguiente = true; // El que roba pierde su turno
+                    saltarSiguiente = true;
+                    logMsg += ` ${siguienteJugador.name} roba 2 cartas y se salta su turno.`;
                 } 
                 else if (cardToPlay.value === '+4') {
-                    const siguienteIndex = (turnIndex + gameDirection + players.length) % players.length;
                     robarCartasAJugador(siguienteIndex, 4);
-                    saltarSiguiente = true; // El que roba 4 pierde su turno
+                    saltarSiguiente = true;
+                    logMsg += ` ${siguienteJugador.name} roba 4 cartas y se salta su turno.`;
                 }
 
-                // Avanzar el turno
                 avanzarTurno(saltarSiguiente ? 2 : 1);
-                updateAllPlayers();
+                logMsg += ` Ahora es el turno de ${players[turnIndex].name}.`;
+
+                updateAllPlayers(logMsg);
             } else {
                 sendTo(ws, 'errorMsg', 'Movimiento inválido. Debe coincidir color o valor.');
             }
@@ -198,19 +211,23 @@ wss.on('connection', (ws) => {
             if (playerIndex !== turnIndex) return;
 
             robarCartasAJugador(playerIndex, 1);
-            
-            // Pasar turno normal al robar
+            const player = players[playerIndex];
             avanzarTurno(1);
-            updateAllPlayers();
+            updateAllPlayers(`${player.name} robó una carta. Turno de ${players[turnIndex].name}.`);
         }
     });
 
+    // --- DETECTAR CUANDO ALGUIEN SE SALE / CIERRA LA PANTALLA ---
     ws.on('close', () => {
-        players = players.filter(p => p.id !== clientId);
-        if (players.length < 2 && gameStarted) {
-            broadcast('errorMsg', 'Faltan jugadores. Partida cancelada.');
-            gameStarted = false;
-            players = [];
+        console.log(`Usuario desconectado: ${clientId} (${myName || 'Sin registrar'})`);
+
+        // Si el juego ya había comenzado, la salida de cualquiera arruina la partida en curso
+        if (gameStarted) {
+            resetGameTotal(`Partida cancelada: El jugador "${myName || 'Un usuario'}" abandonó la sala. El juego se reiniciará para todos.`);
+        } else {
+            // Si aún estaban en la sala de espera, simplemente lo sacamos de la lista sin reiniciar todo
+            players = players.filter(p => p.id !== clientId);
+            broadcast('waitingRoom', players.map(p => p.name));
         }
     });
 });
